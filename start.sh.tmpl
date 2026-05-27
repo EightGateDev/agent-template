@@ -1,0 +1,89 @@
+#!/bin/bash
+# {{AGENT_NAME}} — Claude Code self-healing session
+# Auto-restarts with --channels so Telegram plugin stays connected.
+
+SESSION="{{AGENT_NAME}}"
+AGENT_DIR="/opt/{{AGENT_NAME}}"
+export PATH="$HOME/.bun/bin:$PATH"
+
+[[ -f "$AGENT_DIR/.env" ]] && set -a && source "$AGENT_DIR/.env" && set +a
+
+mkdir -p "$AGENT_DIR/logs"
+
+if [ -n "$TMUX" ]; then
+  cd "$AGENT_DIR"
+
+  # Start local MemPalace HTTP server (port 7766) if not already running
+  # MemPalace — semantic memory search over conversation history by EightGate
+  if ! curl -s http://localhost:7766/health >/dev/null 2>&1; then
+    nohup "$AGENT_DIR/.venv/bin/python3" "$AGENT_DIR/mempalace_server.py" \
+      >> "$AGENT_DIR/logs/mempalace.log" 2>&1 &
+    echo "[$(date)] MemPalace server started"
+  fi
+
+  # Ensure Claude auth credentials exist in agent's HOME-isolated dir
+  mkdir -p "$AGENT_DIR/.claude"
+  [[ ! -f "$AGENT_DIR/.claude/.credentials.json" ]] && \
+    cp ~/.claude/.credentials.json "$AGENT_DIR/.claude/.credentials.json" 2>/dev/null && \
+    chmod 600 "$AGENT_DIR/.claude/.credentials.json" || true
+
+  while true; do
+    # Kill orphaned Telegram plugin (bun server.ts) from previous crashes.
+    pkill -9 -f "bun server.ts" 2>/dev/null || true
+    sleep 1
+
+    # HOME override isolates this agent's Claude state under $AGENT_DIR/.claude/
+    HOME="$AGENT_DIR" python3 "$AGENT_DIR/patches/telegram_plugin.py" 2>/dev/null || true
+
+    # Inline prompt acceptor — handles all startup dialogs automatically
+    (
+      LOGF="$AGENT_DIR/logs/prompt_watcher.log"
+      for _i in $(seq 1 30); do
+        sleep 3
+        BOT=$(tmux capture-pane -t "$SESSION" -p 2>/dev/null || echo "")
+        if echo "$BOT" | grep -q "trust this folder"; then
+          echo "[$(date)] auto-accepted folder trust" >> "$LOGF"
+          tmux send-keys -t "$SESSION" Enter; sleep 1
+        fi
+        if echo "$BOT" | grep -q "Yes, I accept"; then
+          echo "[$(date)] auto-accepted bypass permissions" >> "$LOGF"
+          tmux send-keys -t "$SESSION" Down; sleep 0.5
+          tmux send-keys -t "$SESSION" Enter; break
+        fi
+        if echo "$BOT" | grep -qE "match terminal|Dark mode|Light mode|choose a theme|To change this later"; then
+          echo "[$(date)] auto-accepted theme picker" >> "$LOGF"
+          tmux send-keys -t "$SESSION" Enter; sleep 1
+        fi
+        if echo "$BOT" | grep -qE "Resume from summary|Resuming the full session|Don't ask me again"; then
+          echo "[$(date)] auto-selected dont-ask-again for resume dialog" >> "$LOGF"
+          tmux send-keys -t "$SESSION" Down; sleep 0.2
+          tmux send-keys -t "$SESSION" Down; sleep 0.2
+          tmux send-keys -t "$SESSION" Enter; sleep 1
+        fi
+        if echo "$BOT" | grep -qE "Reconnect|✘ failed.*MCP|Plugin.*failed|↑.*↓.*navigate"; then
+          echo "[$(date)] auto-reconnecting failed MCP plugin" >> "$LOGF"
+          tmux send-keys -t "$SESSION" "1" Enter; sleep 2
+        fi
+        if echo "$BOT" | grep -q "bypass permissions on"; then break; fi
+      done
+    ) &
+
+    CONTINUE_FLAG=""
+    if find "$AGENT_DIR/.claude/projects" -name "*.jsonl" 2>/dev/null | grep -q .; then
+      CONTINUE_FLAG="--continue"
+    fi
+
+    HOME="$AGENT_DIR" ~/.bun/bin/claude \
+      --dangerously-skip-permissions \
+      $CONTINUE_FLAG \
+      --channels plugin:telegram@claude-plugins-official
+
+    echo "[$(date)] claude exited — restarting in 5s..."
+    sleep 5
+  done
+else
+  tmux kill-session -t "$SESSION" 2>/dev/null
+  sleep 1
+  tmux new-session -d -s "$SESSION" -x 220 -y 50 "bash $AGENT_DIR/start.sh"
+  echo "Agent $SESSION started. Attach: tmux attach -t $SESSION"
+fi

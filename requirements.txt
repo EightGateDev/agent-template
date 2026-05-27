@@ -1,0 +1,14 @@
+python-dotenv>=1.0.0
+httpx>=0.27.0
+
+# tg_voice_input
+groq>=0.8.0
+
+# tg_file_reader
+pypdf>=4.0.0
+python-docx>=1.0.0
+
+# Google skills (google_calendar, google_gmail, google_docs, google_sheets)
+# Uncomment when needed:
+# google-api-python-client>=2.100.0
+# google-auth>=2.20.0

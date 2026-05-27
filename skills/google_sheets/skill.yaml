@@ -1,0 +1,16 @@
+name: google_sheets
+type: knowledge
+version: 1.0.0
+label: "Google Sheets"
+group: personal
+order: 26
+default_enabled:
+  private: true
+requires_mode: private
+requires_skills:
+  - bash_exec
+capability: "Read, write, and manage Google Sheets spreadsheets"
+description: |
+  Google Sheets (read/write/append/format/manage) via the gog CLI. Call
+  load_skill('google_sheets') for the gog command reference and the
+  first-time setup protocol, then act via bash_exec.

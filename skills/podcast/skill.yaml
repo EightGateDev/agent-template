@@ -1,0 +1,6 @@
+name: podcast
+description: Generate AI podcast audio from any topic or URL, free via Google NotebookLM
+auth: Cookie Editor export from notebooklm.google.com (guided flow in agent)
+rate_limits:
+  free: 3 podcasts/day
+  paid: 20/day (Google One AI Premium $20/mo)

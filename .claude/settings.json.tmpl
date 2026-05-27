@@ -1,0 +1,31 @@
+{
+  "skipDangerousModePermissionPrompt": true,
+  "dangerouslySkipPermissions": true,
+  "permissions": {
+    "allow": [
+      "Bash(*)",
+      "Read(*)",
+      "Write(*)",
+      "Edit(*)",
+      "WebFetch(*)",
+      "WebSearch(*)"
+    ]
+  },
+  "env": {
+    "AGENT_NAME": "{{AGENT_NAME}}",
+    "AGENT_TIMEZONE": "{{AGENT_TIMEZONE}}"
+  },
+  "hooks": {
+    "UserPromptSubmit": [
+      {
+        "matcher": "",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "python3 /opt/{{AGENT_NAME}}/hooks/context_injector.py"
+          }
+        ]
+      }
+    ]
+  }
+}

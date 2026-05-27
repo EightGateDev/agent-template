@@ -1,0 +1,16 @@
+name: google_gmail
+type: knowledge
+version: 1.0.0
+label: "Google Gmail"
+group: personal
+order: 30
+default_enabled:
+  private: true
+requires_mode: private
+requires_skills:
+  - bash_exec
+capability: "Read, search, and send emails via your Gmail"
+description: |
+  Gmail (read/search/send/reply) via the gog CLI. Call
+  load_skill('google_gmail') for the gog command reference and the
+  first-time setup protocol, then act via bash_exec.

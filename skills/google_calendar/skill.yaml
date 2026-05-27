@@ -1,0 +1,16 @@
+name: google_calendar
+type: knowledge
+version: 1.0.0
+label: "Google Calendar"
+group: personal
+order: 20
+default_enabled:
+  private: true
+requires_mode: private
+requires_skills:
+  - bash_exec
+capability: "Manage your Google Calendar (view, create, update, delete events)"
+description: |
+  Google Calendar (view/create/update/delete events) via the gog CLI.
+  Call load_skill('google_calendar') for the gog command reference and
+  the first-time setup protocol, then act via bash_exec.

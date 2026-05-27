@@ -1,0 +1,85 @@
+# Skills index — /opt/<agent>/skills/
+# Run: python /opt/<agent>/skills/<name>/handler.py [args]
+# Each handler.py accepts --help or shows usage on bad args.
+
+always_available:
+  read_messages:
+    run: "python skills/read_messages/handler.py <chat_id> [limit=40]"
+    desc: Last N messages from local SQLite message log for this chat
+
+  schedule_task:
+    run: "python skills/schedule_task/handler.py"
+    desc: Create one-time, recurring, or todo background tasks
+
+requires_api_key:
+  tg_voice_input:
+    run: "python skills/tg_voice_input/handler.py <file_id>"
+    desc: Transcribe Telegram voice message via Groq Whisper
+    requires_env: [GROQ_API_KEY, TELEGRAM_BOT_TOKEN]
+
+  tg_voice_output:
+    run: "python skills/tg_voice_output/handler.py <chat_id> \"<text>\""
+    desc: Send voice reply via ElevenLabs TTS
+    requires_env: [ELEVENLABS_API_KEY, TELEGRAM_BOT_TOKEN]
+
+  tg_file_reader:
+    run: "python skills/tg_file_reader/handler.py <file_id> [filename]"
+    desc: Download and read PDF, DOCX, or text file from Telegram
+    requires_env: TELEGRAM_BOT_TOKEN
+
+  nanobanana:
+    run: "python skills/nanobanana/handler.py \"<prompt>\" [chat_id]"
+    desc: Generate image via Gemini Imagen; sends to Telegram if chat_id given
+    requires_env: GEMINI_API_KEY
+
+  phone_call:
+    run: "python skills/phone_call/handler.py <phone_number> \"<task>\""
+    requires_env: [VAPI_API_KEY, VAPI_PHONE_NUMBER_ID, VAPI_ASSISTANT_ID]
+    notes: |
+      Потребує акаунту на vapi.ai (є безкоштовний план).
+      Налаштування: VAPI_API_KEY, VAPI_PHONE_NUMBER_ID, VAPI_ASSISTANT_ID в .env
+
+optional_integrations:
+  podcast:
+    run: "python skills/podcast/handler.py <login|generate|status> [args]"
+    desc: Generate AI podcast audio via Google NotebookLM (free, 3/day)
+    key_operations:
+      - "status                                    # перевірити авторизацію"
+      - "login                                     # налаштувати auth (Cookie Editor flow)"
+      - 'generate "тема" --duration brief          # короткий подкаст 2-3 хв'
+      - 'generate "тема" --duration standard       # стандартний 5-6 хв (default)'
+      - 'generate "тема" --duration extended       # довгий 8-10 хв'
+      - 'generate "тема" --source "https://..."   # подкаст про статтю або сайт'
+      - 'generate "тема" --chat-id 12345          # генерація + відправка в Telegram'
+    notes: |
+      Авторизація: одноразово через Cookie Editor (Chrome/Firefox extension).
+      Агент сам проведе через налаштування якщо не авторизований.
+      Сесія діє кілька тижнів. Rate limit: 3 подкасти/день.
+
+  google_calendar:
+    run: "gog calendar <command> [flags]"
+    requires_env: GOG_KEYRING_PASSWORD
+    notes: |
+      Використовує gog CLI (встановлюється автоматично: https://github.com/steipete/gogcli).
+      Перший запуск:
+        gog auth add <email> --services gmail,calendar,docs,sheets,drive --remote --step 1
+        gog auth add <email> --services gmail,calendar,docs,sheets,drive --remote --step 2 --auth-url "<url>"
+      Деталі: cat skills/google_calendar/SETUP.md
+
+  google_gmail:
+    run: "gog mail <command> [flags]"
+    requires_env: GOG_KEYRING_PASSWORD
+    notes: |
+      Та сама OAuth авторизація що і google_calendar.
+      IMPORTANT: за замовчуванням --max=10 повертає лише 10 результатів.
+      Використовуй --all для отримання всіх:
+        gog mail list --all
+        gog mail search "query" --all
+
+  google_docs:
+    run: "gog docs <command> [flags]"
+    requires_env: GOG_KEYRING_PASSWORD
+
+  google_sheets:
+    run: "gog sheets <command> [flags]"
+    requires_env: GOG_KEYRING_PASSWORD
