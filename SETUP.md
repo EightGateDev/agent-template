@@ -14,6 +14,7 @@
 > Де розгортаємо агента?
 > **1) На VPS** — Linux-сервер у хмарі (Hetzner, DigitalOcean, будь-який)
 > **2) Локально** — на цьому комп'ютері (Mac або Linux)
+> **3) Локально (Windows)** — на цьому комп'ютері (Windows 10/11)
 
 Залежно від відповіді — виконуй відповідний розділ нижче.
 
@@ -131,7 +132,87 @@ Start команда: `bash ~/AGENT_NAME/start.sh`
 
 ---
 
-## СПІЛЬНІ КРОКИ (виконуй після A4 або B2)
+## ВАРІАНТ C — Розгортання локально (Windows / WSL2)
+
+### C1 — Перевір наявність WSL та встанови якщо нема
+
+Виконай у PowerShell (Claude Code запускає це напряму):
+
+```powershell
+wsl --status
+```
+
+**Якщо WSL НЕ встановлений** (помилка або "not installed"):
+
+```powershell
+wsl --install -d Ubuntu
+```
+
+> ⚠️ Ця команда потребує прав адміністратора. Якщо з'явиться UAC-запит — підтвердь.
+> Після завершення установки потрібне **перезавантаження ПК**.
+
+Повідом користувача:
+> Встановлюю WSL2 + Ubuntu. Після перезавантаження Windows автоматично відкриє термінал Ubuntu — **задай там ім'я користувача та пароль**, потім поверніться до Claude Code і відповідайте "3" знову.
+
+**Зупини виконання.** Продовжити лише після того, як користувач повернувся після перезавантаження.
+
+---
+
+Якщо WSL вже є (або після перезавантаження) — перевір що Ubuntu доступна:
+
+```powershell
+wsl -d Ubuntu -- echo "WSL OK"
+```
+
+### C2 — Встанови залежності всередині WSL
+
+```powershell
+wsl -d Ubuntu -- bash -c "sudo apt-get update -qq && sudo apt-get install -y -qq tmux python3 python3-venv python3-pip curl"
+```
+
+```powershell
+wsl -d Ubuntu -- bash -c "curl -fsSL https://bun.sh/install | bash"
+```
+
+```powershell
+wsl -d Ubuntu -- bash -c "~/.bun/bin/bun install -g @anthropic-ai/claude-code 2>/dev/null; ~/.bun/bin/claude --version"
+```
+
+### C3 — Створи директорію та скопіюй файли
+
+Визнач поточну директорію архіву у форматі WSL-шляху.  
+Windows-шлях `C:\Users\user\Downloads\agent-template` → WSL-шлях `/mnt/c/Users/user/Downloads/agent-template`.
+
+```powershell
+# Отримай поточний шлях у WSL-форматі
+$winPath = (Get-Location).Path
+$wslPath = "/mnt/" + $winPath.Substring(0,1).ToLower() + "/" + $winPath.Substring(3).Replace("\","/")
+Write-Host "WSL path: $wslPath"
+```
+
+```powershell
+wsl -d Ubuntu -- bash -c "mkdir -p ~/AGENT_NAME && cp -r '$wslPath'/. ~/AGENT_NAME/ && rm -f ~/AGENT_NAME/SETUP.md ~/AGENT_NAME/README.md ~/AGENT_NAME/CLAUDE.md && echo 'Files copied'"
+```
+
+### C4 — Кроки 5–12 з розділу СПІЛЬНІ КРОКИ нижче
+
+Директорія агента: `~/AGENT_NAME` (всередині WSL)
+Запуск від: поточного WSL-користувача
+
+Усі команди зі СПІЛЬНИХ КРОКІВ виконуй через:
+```powershell
+wsl -d Ubuntu -- bash -c "КОМАНДА"
+```
+
+Або відкрий WSL-термінал напряму (`wsl -d Ubuntu`) та виконуй команди там — це зручніше для довгих секцій.
+
+**Запуск агента (Крок 10):** `wsl -d Ubuntu -- bash -c "bash ~/AGENT_NAME/start.sh"`
+
+**Перевірка tmux (Кроки 10-11):** `wsl -d Ubuntu -- bash -c "tmux ls"` та `wsl -d Ubuntu -- bash -c "tmux capture-pane -t AGENT_NAME -p | tail -5"`
+
+---
+
+## СПІЛЬНІ КРОКИ (виконуй після A4, B2 або C3)
 
 Нижче AGENT_DIR = `/opt/AGENT_NAME` (VPS) або `~/AGENT_NAME` (локально).
 
