@@ -361,6 +361,104 @@ def patch_reply_to_meta(path: str) -> bool:
     return True
 
 
+# ── Dev-group filter patch ───────────────────────────────────────────────────
+# In the dev/internal group, only log to SQLite when the bot is @mentioned or
+# replied to. In every other chat the existing "log everything" behaviour applies.
+DEV_GROUP_FILTER_MARKER = '// agent-platform: dev-group-filter'
+
+
+def patch_dev_group_history_filter(path: str) -> bool:
+    """Skip plugin's own historyDb save for non-mentioned messages in the dev group.
+
+    The official Telegram plugin has its own history DB (separate from our messages.db)
+    that saves ALL group messages and injects them as historyPrefix when the bot is
+    mentioned. This patch prevents non-mentioned messages from entering that DB too.
+    Requires _apDevGroupId to be declared (patch_dev_group_filter must run first).
+    Idempotent.
+    """
+    HISTORY_MARKER = '// agent-platform: dev-group-history-filter'
+
+    with open(path, 'r', encoding='utf-8') as f:
+        src = f.read()
+
+    if HISTORY_MARKER in src:
+        return False
+
+    # The plugin's dbSave call inside the group history block:
+    #   if (gcid in loadAccess().groups) {
+    #     dbSave(gcid, String(ctx.from.id), ctx.from.username ?? '', text, ...)
+    #   }
+    old_block = (
+        "    if (gcid in loadAccess().groups) {\n"
+        "      dbSave(\n"
+        "        gcid,\n"
+        "        String(ctx.from.id),\n"
+        "        ctx.from.username ?? '',\n"
+        "        text,\n"
+        "        ctx.message?.date ?? Math.floor(Date.now() / 1000),\n"
+        "        String(ctx.message?.message_id ?? 0),\n"
+        "      )\n"
+        "    }"
+    )
+    new_block = (
+        "    if (gcid in loadAccess().groups) {\n"
+        "      " + HISTORY_MARKER + "\n"
+        "      const _apDgHist=gcid!==_apDevGroupId||!botUsername||text.toLowerCase().includes('@'+botUsername.toLowerCase())\n"
+        "      if(_apDgHist){dbSave(gcid,String(ctx.from.id),ctx.from.username??'',text,ctx.message?.date??Math.floor(Date.now()/1000),String(ctx.message?.message_id??0))}\n"
+        "    }"
+    )
+
+    if old_block not in src:
+        print("  WARNING: dev-group-history-filter: dbSave block not found", file=sys.stderr)
+        return False
+
+    src = src.replace(old_block, new_block, 1)
+    with open(path, 'w', encoding='utf-8') as f:
+        f.write(src)
+    return True
+
+
+def patch_dev_group_filter(path: str) -> bool:
+    """Skip SQLite logging for non-mentioned messages in the dev group. Idempotent."""
+    with open(path, 'r', encoding='utf-8') as f:
+        src = f.read()
+
+    if DEV_GROUP_FILTER_MARKER in src:
+        return False
+
+    # 1. Inject constant right after _apMpUrl declaration
+    anchor_const = "const _apMpUrl = process.env.MEMEPALACE_URL ?? ''"
+    if anchor_const not in src:
+        print("  WARNING: dev-group-filter: const anchor not found", file=sys.stderr)
+        return False
+
+    src = src.replace(
+        anchor_const,
+        anchor_const + "\nconst _apDevGroupId = '-1003947954196' // agent-platform: dev-group-filter",
+        1,
+    )
+
+    # 2. In INBOUND_PRE_GATE block, wrap _apLogMsg with the mention check.
+    #    The existing injected code ends with: _apLogMsg(_r);_apMp(_r)}}
+    #    (double }} closes the if-block and the anonymous block)
+    old_log = "_apLogMsg(_r);_apMp(_r)}}"
+    new_log = (
+        "const _apDgOk=_c!==_apDevGroupId||!botUsername"
+        "||((text??'').toString().includes('@'+botUsername))"
+        "||ctx.message?.reply_to_message?.from?.username===botUsername;"
+        "if(_apDgOk){_apLogMsg(_r)}_apMp(_r)}}"
+    )
+    if old_log not in src:
+        print("  WARNING: dev-group-filter: INBOUND_PRE_GATE log anchor not found", file=sys.stderr)
+        return False
+
+    src = src.replace(old_log, new_log, 1)
+
+    with open(path, 'w', encoding='utf-8') as f:
+        f.write(src)
+    return True
+
+
 # ── Chat name patch ──────────────────────────────────────────────────────────
 # Adds ctx.chat.title to the dashboard webhook payload so the dashboard can
 # display real group/DM names instead of raw numeric IDs.
@@ -521,6 +619,14 @@ def main():
         migration = patch_sqlite_migration(server_path)
         if migration:
             print(f"Patched (sqlite-migration): {server_path}")
+
+        dev_group = patch_dev_group_filter(server_path)
+        if dev_group:
+            print(f"Patched (dev-group-filter): {server_path}")
+
+        dev_group_hist = patch_dev_group_history_filter(server_path)
+        if dev_group_hist:
+            print(f"Patched (dev-group-history-filter): {server_path}")
 
         skill_result = patch_skill_md(plugin_dir)
         if skill_result:
