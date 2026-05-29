@@ -294,6 +294,20 @@ python3 -m venv .venv
 .venv/bin/pip install -q -r requirements.txt
 ```
 
+### Крок 7б — Встанови gog CLI (Google OAuth — потрібен для Calendar/Gmail/Docs/Sheets)
+
+```bash
+GOG_URL=$(curl -s https://api.github.com/repos/openclaw/gogcli/releases/latest \
+  | grep -oE '"browser_download_url": *"[^"]*linux_amd64\.tar\.gz"' \
+  | grep -oE 'https[^"]+' | head -1)
+[ -n "$GOG_URL" ] || GOG_URL="https://github.com/openclaw/gogcli/releases/download/v0.19.0/gogcli_0.19.0_linux_amd64.tar.gz"
+curl -fsSL "$GOG_URL" | tar -xz -C /tmp gog
+mv /tmp/gog /usr/local/bin/gog && chmod +x /usr/local/bin/gog
+gog --version
+```
+
+> На Mac/локально — те саме, але може знадобитися `sudo mv`. Або встанови у `~/.local/bin/gog`.
+
 ### Крок 8 — Налаштуй Claude credentials
 
 ```python
