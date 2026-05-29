@@ -1,0 +1,11 @@
+[Unit]
+Description={{AGENT_NAME}} Vikunja reminder worker
+
+[Service]
+Type=oneshot
+User=claudebot
+Group=claudebot
+WorkingDirectory=/opt/{{AGENT_NAME}}
+Environment=AGENT_DIR=/opt/{{AGENT_NAME}}
+EnvironmentFile=/opt/{{AGENT_NAME}}/.env
+ExecStart=/usr/bin/python3 /opt/{{AGENT_NAME}}/skills/vikunja/reminder_worker.py

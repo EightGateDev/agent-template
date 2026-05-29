@@ -1,0 +1,19 @@
+name: vikunja
+description: Task management via Vikunja self-hosted — create, track, remind
+
+run: "MCP tools via vikunja-mcp (connected to VIKUNJA_URL)"
+requires_auth: "VIKUNJA_USERNAME + VIKUNJA_PASSWORD in .env (set by builder)"
+
+key_operations:
+  - "Create task with due date and description"
+  - "List pending/overdue tasks"
+  - "Mark task as done"
+  - "Set time estimates"
+  - "Morning planning: parse natural language → structured tasks"
+  - "End-of-day summary: done vs pending"
+
+notes: |
+  Reminders sent automatically by reminder_worker.py (systemd timer, every 60s).
+  Claude is NOT involved in triggering reminders — they fire independently.
+  Tasks arrive in Telegram as normal messages, Claude responds in existing session.
+  VIKUNJA_PROJECT_ID in .env selects the project (auto-detected if empty).

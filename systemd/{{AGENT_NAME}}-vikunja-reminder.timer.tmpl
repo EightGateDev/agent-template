@@ -1,0 +1,11 @@
+[Unit]
+Description={{AGENT_NAME}} Vikunja reminder — check due tasks every 60s
+
+[Timer]
+OnBootSec=60s
+OnUnitActiveSec=60s
+AccuracySec=5s
+Unit={{AGENT_NAME}}-vikunja-reminder.service
+
+[Install]
+WantedBy=timers.target

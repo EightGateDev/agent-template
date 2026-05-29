@@ -7,11 +7,28 @@ always_available:
     run: "python skills/read_messages/handler.py <chat_id> [limit=40]"
     desc: Last N messages from local SQLite message log for this chat
 
+  mempalace_query:
+    run: "python skills/mempalace_query/handler.py <chat_id> [query]"
+    desc: Broader memory context from MemPalace service
+    requires_env: MEMEPALACE_URL
+
   schedule_task:
     run: "python skills/schedule_task/handler.py"
     desc: Create one-time, recurring, or todo background tasks
 
+  weather:
+    run: "python skills/weather/handler.py <location>"
+    desc: Current weather via wttr.in (no API key needed)
+
+  user_health:
+    run: "python skills/user_health/handler.py <log|get|summary> [args]"
+    desc: Personal health tracking, stored in local SQLite (no key needed)
+
 requires_api_key:
+  deep_web_search:
+    run: "python skills/deep_web_search/handler.py \"<query>\""
+    requires_env: PERPLEXITY_API_KEY
+
   tg_voice_input:
     run: "python skills/tg_voice_input/handler.py <file_id>"
     desc: Transcribe Telegram voice message via Groq Whisper
@@ -32,54 +49,140 @@ requires_api_key:
     desc: Generate image via Gemini Imagen; sends to Telegram if chat_id given
     requires_env: GEMINI_API_KEY
 
-  phone_call:
-    run: "python skills/phone_call/handler.py <phone_number> \"<task>\""
-    requires_env: [VAPI_API_KEY, VAPI_PHONE_NUMBER_ID, VAPI_ASSISTANT_ID]
+  youtube:
+    run: "python skills/youtube/handler.py <search|metadata|transcript|analyze> [args]"
+    desc: Search YouTube videos and analyze content via transcript (YouTube Data API v3 + Supadata.ai)
+    requires_env: [YOUTUBE_API_KEY, SUPADATA_API_KEY]
+    key_operations:
+      - 'search "query" --max 10 --lang uk   # знайти відео'
+      - 'analyze "URL"  --lang uk            # транскрипт + метадата'
+      - 'transcript "URL" --lang en          # тільки транскрипт'
+
+dev_tools:
+  vikunja:
+    run: "MCP tools via vikunja-mcp (auto-configured for dev agents)"
+    desc: Task management — create, track, remind. Reminders fire via systemd timer independent of Claude.
+    requires_env: [VIKUNJA_URL, VIKUNJA_USERNAME, VIKUNJA_PASSWORD]
+    key_operations:
+      - "Create task with due date: «зроби X до 18:00»"
+      - "List pending tasks: «що в мене сьогодні?»"
+      - "Morning plan: «ось мій план на сьогодні: [список]»"
+      - "Mark done: «фіч X задеплоїв» — оновлює статус"
+      - "End-of-day: «що я зробив сьогодні?» — summary done/pending"
     notes: |
-      Потребує акаунту на vapi.ai (є безкоштовний план).
-      Налаштування: VAPI_API_KEY, VAPI_PHONE_NUMBER_ID, VAPI_ASSISTANT_ID в .env
+      Reminders sent by skills/vikunja/reminder_worker.py (systemd timer, every 60s).
+      Reminder arrives as Telegram message in the EXISTING Claude session — no new session spawned.
+      VIKUNJA_PROJECT_ID auto-detected if empty (uses first project).
+      Re-auth: script logs in with VIKUNJA_USERNAME+PASSWORD to get fresh JWT each call.
 
 optional_integrations:
   podcast:
     run: "python skills/podcast/handler.py <login|generate|status> [args]"
     desc: Generate AI podcast audio via Google NotebookLM (free, 3/day)
+    requires_auth: NOTEBOOKLM_STORAGE_STATE_B64 (base64 storage_state) or guided cookie login
     key_operations:
-      - "status                                    # перевірити авторизацію"
-      - "login                                     # налаштувати auth (Cookie Editor flow)"
-      - 'generate "тема" --duration brief          # короткий подкаст 2-3 хв'
-      - 'generate "тема" --duration standard       # стандартний 5-6 хв (default)'
-      - 'generate "тема" --duration extended       # довгий 8-10 хв'
-      - 'generate "тема" --source "https://..."   # подкаст про статтю або сайт'
-      - 'generate "тема" --chat-id 12345          # генерація + відправка в Telegram'
+      - "status                                              # перевірити авторизацію"
+      - "login                                               # налаштувати auth (cookies.txt flow)"
+      - 'generate "тема"                                    # стандартний deep_dive подкаст'
+      - 'generate "тема" --format deep_dive|brief|critique|debate  # тип подкасту'
+      - 'generate "тема" --duration brief|standard|extended # тривалість 2-3|5-6|8-10 хв'
+      - 'generate "тема" --preset casual|formal|educational|expert|ukrainian'
+      - 'generate "тема" --instructions "Explain for beginners, no jargon"'
+      - 'generate "тема" --source "https://..."             # подкаст про статтю/сайт'
+      - 'generate "тема" --chat-id 12345                   # генерація + відправка в Telegram'
+      - 'generate "тема" --format debate --preset formal --lang en  # дебати англійською'
+    formats:
+      deep_dive: Глибока дискусія двох хостів (default)
+      brief:     Стислий огляд ~2 хв
+      critique:  Критичний аналіз — плюси та мінуси
+      debate:    Два хости з протилежними позиціями
+    presets:
+      casual:     Дружній розмовний тон, прості слова
+      formal:     Академічний професійний тон
+      educational: Для новачків, без жаргону, з аналогіями
+      expert:     Для фахівців, пропускає азбуку
+      ukrainian:  Примусово українська мова протягом всього подкасту
     notes: |
-      Авторизація: одноразово через Cookie Editor (Chrome/Firefox extension).
-      Агент сам проведе через налаштування якщо не авторизований.
-      Сесія діє кілька тижнів. Rate limit: 3 подкасти/день.
+      Auth: "Get cookies.txt LOCALLY" Chrome extension → Export All → надіслати файл.
+      Агент сам попросить авторизуватись якщо NOTEBOOKLM_STORAGE_STATE_B64 порожній.
+      Коли сесія протухне (кілька тижнів) — агент попросить повторити login.
+      Rate limit: 3 подкасти/день (free). AudioLength гарантована тільки для en.
 
   google_calendar:
     run: "gog calendar <command> [flags]"
     requires_env: GOG_KEYRING_PASSWORD
     notes: |
-      Використовує gog CLI (встановлюється автоматично: https://github.com/steipete/gogcli).
-      Перший запуск:
+      Use gog CLI — NOT python handler. OAuth client pre-configured on server.
+      First-time setup: ask user for Gmail address, then run:
         gog auth add <email> --services gmail,calendar,docs,sheets,drive --remote --step 1
+      Send the URL to user, get redirect URL back, then:
         gog auth add <email> --services gmail,calendar,docs,sheets,drive --remote --step 2 --auth-url "<url>"
-      Деталі: cat skills/google_calendar/SETUP.md
+      See: cat skills/google_calendar/SETUP.md
 
   google_gmail:
     run: "gog mail <command> [flags]"
     requires_env: GOG_KEYRING_PASSWORD
     notes: |
-      Та сама OAuth авторизація що і google_calendar.
-      IMPORTANT: за замовчуванням --max=10 повертає лише 10 результатів.
-      Використовуй --all для отримання всіх:
+      Use gog CLI — NOT python handler. Same OAuth auth as google_calendar.
+      Check auth: gog auth list
+      Setup: cat skills/google_calendar/SETUP.md
+      IMPORTANT: default --max=10 returns only 10 results. Use --all to fetch all pages:
         gog mail list --all
         gog mail search "query" --all
 
   google_docs:
     run: "gog docs <command> [flags]"
     requires_env: GOG_KEYRING_PASSWORD
+    notes: "Use gog CLI. Auth: gog auth list. Setup: cat skills/google_calendar/SETUP.md"
 
   google_sheets:
     run: "gog sheets <command> [flags]"
     requires_env: GOG_KEYRING_PASSWORD
+    notes: "Use gog CLI. Auth: gog auth list. Setup: cat skills/google_calendar/SETUP.md"
+
+  bitrix_tasks:
+    run: "python skills/bitrix_tasks/handler.py <list|create|complete> [args]"
+    requires_env: BITRIX_WEBHOOK_URL
+
+  phone_call:
+    run: "python skills/phone_call/handler.py <phone_number> \"<task>\""
+    requires_env: [VAPI_API_KEY, VAPI_PHONE_NUMBER_ID, VAPI_ASSISTANT_ID]
+
+  instagram:
+    run: "MCP tools: instagram_* (10 tools via social-media MCP server)"
+    desc: Instagram DMs, comments, content publishing via Meta Graph API
+    requires_auth: OAuth — instagram_get_auth_url → browser → instagram_exchange_code(code)
+    key_operations:
+      - "instagram_get_auth_url()                    # OAuth URL для підключення"
+      - "instagram_exchange_code(code)               # підключити акаунт (зберігає токен)"
+      - "instagram_send_dm(recipient_id, text)       # відповісти в DM (recipient_id з <channel> tag)"
+      - "instagram_post_photo(caption, image_path)   # опублікувати фото"
+      - "instagram_post_reel(file_path, caption)     # опублікувати Reel"
+      - "instagram_get_my_media()                    # список постів"
+      - "instagram_get_comments(media_id)            # коментарі до посту"
+      - "instagram_reply_comment(comment_id, text)   # відповісти на коментар"
+    notes: |
+      Incoming DMs/comments arrive as <channel source="instagram-dm" kind="dm|comment"
+        chat_id="IGSID" user_id="IGSID" user="username" ts="...">TEXT</channel>.
+      For DMs: reply via mcp__plugin_instagram-dm_instagram-dm__reply(recipient_id, text).
+      Token (60-day) stored in .env after exchange_code. Re-auth when expired (error 190).
+      Rate limit: ~30 DMs/day to avoid Meta anti-spam token invalidation.
+
+  threads:
+    run: "MCP tools: threads_* (6 tools via social-media MCP server)"
+    desc: Threads (Meta) — posts, replies, comments (beta)
+    requires_auth: OAuth — threads_get_auth_url → browser → threads_exchange_code(code)
+    key_operations:
+      - "threads_get_auth_url() / threads_exchange_code(code)   # підключення"
+      - "threads_post(text)                          # новий пост"
+      - "threads_reply(post_id, text)                # відповісти на пост"
+      - "threads_get_comments(post_id)               # коментарі"
+      - "threads_reply_comment(comment_id, text)     # відповісти на коментар"
+
+  tiktok:
+    run: "MCP tools: tiktok_* (3 tools via social-media MCP server)"
+    desc: TikTok — відео публікація (beta)
+    requires_auth: OAuth — tiktok_get_auth_url → browser → tiktok_exchange_code(code)
+    key_operations:
+      - "tiktok_get_auth_url() / tiktok_exchange_code(code)     # підключення"
+      - "tiktok_post_video(file_path, title)         # публікувати відео"
