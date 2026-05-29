@@ -1,10 +1,17 @@
 #!/bin/bash
 # Vikunja MCP server launcher — uses long-lived API token (tk_...) if available,
 # falls back to login JWT. Long-lived token never expires; JWT lasts ~10 min.
+# NOTE: @aimbitgmbh/vikunja-mcp reads VIKUNJA_URL (must include /api/v1).
+#       It ignores VIKUNJA_API_URL — do NOT use that var.
 AGENT_DIR="$(cd "$(dirname "$0")/../.." && pwd)"
 set -a; source "$AGENT_DIR/.env"; set +a
 
-export VIKUNJA_API_URL="${VIKUNJA_URL%/}/api/v1"
+# Ensure VIKUNJA_URL ends with /api/v1 (package requirement, README explicit)
+case "$VIKUNJA_URL" in
+  */api/v1|*/api/v1/) ;;
+  *) VIKUNJA_URL="${VIKUNJA_URL%/}/api/v1" ;;
+esac
+export VIKUNJA_URL
 
 if [ -n "$VIKUNJA_API_TOKEN" ]; then
     # Long-lived token already stored — use it directly (no login needed)
