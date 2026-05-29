@@ -26,15 +26,21 @@ if [ -n "$TMUX" ]; then
   if [ "${VIKUNJA_ENABLED:-false}" = "true" ]; then
     VIKUNJA_BIN="$AGENT_DIR/bin/vikunja"
     mkdir -p "$AGENT_DIR/bin" "$AGENT_DIR/vikunja-data"
-    # Download binary on first run
+    # Download binary on first run (Vikunja ships as -full.zip, not bare binary)
     if [ ! -f "$VIKUNJA_BIN" ]; then
-      echo "[$(date)] Downloading Vikunja binary..."
-      _VK_DL=$(curl -s https://api.github.com/repos/go-vikunja/vikunja/releases/latest \
-        | grep -o '"browser_download_url":"[^"]*linux-amd64"' | grep -v sha256 | head -1 \
-        | cut -d'"' -f4)
-      if [ -n "$_VK_DL" ]; then
-        curl -fsSL "$_VK_DL" -o "$VIKUNJA_BIN" && chmod +x "$VIKUNJA_BIN" \
+      echo "[$(date)] Downloading Vikunja..."
+      _VK_URL=$(curl -s https://api.github.com/repos/go-vikunja/vikunja/releases/latest \
+        | grep -oE '"browser_download_url": *"[^"]*linux-amd64-full\.zip"' \
+        | grep -oE 'https[^"]+' | head -1)
+      if [ -n "$_VK_URL" ]; then
+        _VK_TMP=$(mktemp -d)
+        curl -fsSL "$_VK_URL" -o "$_VK_TMP/vk.zip" \
+          && (cd "$_VK_TMP" && unzip -oq vk.zip) \
+          && _VK_BIN=$(find "$_VK_TMP" -maxdepth 2 -type f ! -iname '*.zip' \
+               -printf '%s\t%p\n' 2>/dev/null | sort -rn | head -1 | cut -f2-) \
+          && mv "$_VK_BIN" "$VIKUNJA_BIN" && chmod +x "$VIKUNJA_BIN" \
           && echo "[$(date)] Vikunja downloaded"
+        rm -rf "$_VK_TMP"
       else
         echo "[$(date)] Vikunja download URL not found — skipping"
       fi
@@ -43,7 +49,7 @@ if [ -n "$TMUX" ]; then
     if [ -f "$VIKUNJA_BIN" ] && ! curl -s http://localhost:3456/api/v1/info >/dev/null 2>&1; then
       VIKUNJA_SERVICE_PUBLICURL=http://localhost:3456 \
       VIKUNJA_DATABASE_PATH="$AGENT_DIR/vikunja-data/vikunja.db" \
-      VIKUNJA_SERVICE_JWTSECRET="${VIKUNJA_JWTSECRET:-vikunja_$(hostname)_secret}" \
+      VIKUNJA_SERVICE_SECRET="${VIKUNJA_JWTSECRET:-vikunja_$(hostname)_secret}" \
       VIKUNJA_SERVICE_ENABLEREGISTRATION=true \
       VIKUNJA_LOG_LEVEL=WARNING \
       nohup "$VIKUNJA_BIN" >> "$AGENT_DIR/logs/vikunja.log" 2>&1 &

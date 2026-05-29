@@ -12,14 +12,16 @@ AGENT_DIR = Path(os.environ.get("AGENT_DIR", os.path.dirname(os.path.dirname(os.
 BASE = "http://localhost:3456"
 
 
-def _api(path: str, body=None, token: str = "") -> dict | None:
+def _api(path: str, body=None, token: str = "", method: str | None = None) -> dict | None:
     headers: dict = {"Content-Type": "application/json"}
     if token:
         headers["Authorization"] = f"Bearer {token}"
+    if method is None:
+        method = "POST" if body is not None else "GET"
     req = urllib.request.Request(
         f"{BASE}/api/v1{path}",
         data=json.dumps(body).encode() if body is not None else None,
-        headers=headers, method="POST" if body is not None else "GET",
+        headers=headers, method=method,
     )
     try:
         with urllib.request.urlopen(req, timeout=10) as r:
@@ -88,8 +90,16 @@ def main() -> None:
         return
     token = login["token"]
 
-    # Create default project
-    proj = _api("/projects", {"title": "Tasks", "color": "#4776E6"}, token=token)
+    # Create default project — Vikunja v2 uses PUT for collection create (POST = 405)
+    proj = _api("/projects", {"title": "Tasks", "color": "#4776E6"}, token=token, method="PUT")
+    if not (proj and "id" in proj):
+        # Fallback: Vikunja auto-creates a default project on registration — find it
+        projs = _api("/projects", token=token) or []
+        proj = next(
+            (p for p in sorted(projs, key=lambda x: x.get("id", 0))
+             if not p.get("is_archived") and p.get("id", 0) > 0),
+            None,
+        )
     project_id = str(proj["id"]) if proj and "id" in proj else ""
 
     append_env(
