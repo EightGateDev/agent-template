@@ -6,6 +6,8 @@ SESSION="{{AGENT_NAME}}"
 AGENT_DIR="/opt/{{AGENT_NAME}}"
 export PATH="$HOME/.bun/bin:$PATH"
 
+# Source agent env so the Telegram plugin extension gets
+# DASHBOARD_WEBHOOK_URL, DASHBOARD_AGENT_TOKEN, AGENT_ID, MEMEPALACE_URL
 [[ -f "$AGENT_DIR/.env" ]] && set -a && source "$AGENT_DIR/.env" && set +a
 
 mkdir -p "$AGENT_DIR/logs"
@@ -14,33 +16,82 @@ if [ -n "$TMUX" ]; then
   cd "$AGENT_DIR"
 
   # Start local MemPalace HTTP server (port 7766) if not already running
-  # MemPalace — semantic memory search over conversation history by EightGate
   if ! curl -s http://localhost:7766/health >/dev/null 2>&1; then
     nohup "$AGENT_DIR/.venv/bin/python3" "$AGENT_DIR/mempalace_server.py" \
       >> "$AGENT_DIR/logs/mempalace.log" 2>&1 &
     echo "[$(date)] MemPalace server started"
   fi
 
+  # ── Vikunja task manager (dev agents only, port 3456) ─────────────────────
+  if [ "${VIKUNJA_ENABLED:-false}" = "true" ]; then
+    VIKUNJA_BIN="$AGENT_DIR/bin/vikunja"
+    mkdir -p "$AGENT_DIR/bin" "$AGENT_DIR/vikunja-data"
+    # Download binary on first run
+    if [ ! -f "$VIKUNJA_BIN" ]; then
+      echo "[$(date)] Downloading Vikunja binary..."
+      _VK_DL=$(curl -s https://api.github.com/repos/go-vikunja/vikunja/releases/latest \
+        | grep -o '"browser_download_url":"[^"]*linux-amd64"' | grep -v sha256 | head -1 \
+        | cut -d'"' -f4)
+      if [ -n "$_VK_DL" ]; then
+        curl -fsSL "$_VK_DL" -o "$VIKUNJA_BIN" && chmod +x "$VIKUNJA_BIN" \
+          && echo "[$(date)] Vikunja downloaded"
+      else
+        echo "[$(date)] Vikunja download URL not found — skipping"
+      fi
+    fi
+    # Start if binary exists and Vikunja not yet running
+    if [ -f "$VIKUNJA_BIN" ] && ! curl -s http://localhost:3456/api/v1/info >/dev/null 2>&1; then
+      VIKUNJA_SERVICE_PUBLICURL=http://localhost:3456 \
+      VIKUNJA_DATABASE_PATH="$AGENT_DIR/vikunja-data/vikunja.db" \
+      VIKUNJA_SERVICE_JWTSECRET="${VIKUNJA_JWTSECRET:-vikunja_$(hostname)_secret}" \
+      VIKUNJA_SERVICE_ENABLEREGISTRATION=true \
+      VIKUNJA_LOG_LEVEL=WARNING \
+      nohup "$VIKUNJA_BIN" >> "$AGENT_DIR/logs/vikunja.log" 2>&1 &
+      sleep 3
+      echo "[$(date)] Vikunja started on localhost:3456"
+    fi
+    # First-time init (idempotent — exits immediately if already configured)
+    AGENT_DIR="$AGENT_DIR" python3 "$AGENT_DIR/skills/vikunja/setup_vikunja.py" 2>/dev/null || true
+  fi
+
   # Ensure Claude auth credentials exist in agent's HOME-isolated dir
   mkdir -p "$AGENT_DIR/.claude"
   [[ ! -f "$AGENT_DIR/.claude/.credentials.json" ]] && \
-    cp ~/.claude/.credentials.json "$AGENT_DIR/.claude/.credentials.json" 2>/dev/null && \
+    cp /home/claudebot/.claude/.credentials.json "$AGENT_DIR/.claude/.credentials.json" 2>/dev/null && \
     chmod 600 "$AGENT_DIR/.claude/.credentials.json" || true
 
+  # Instagram channel flag — added only when INSTAGRAM_ENABLED=true
+  IG_FLAGS=""
+  if [ "${INSTAGRAM_ENABLED:-false}" = "true" ]; then
+    IG_FLAGS="--dangerously-load-development-channels plugin:instagram-dm@local"
+  fi
+
   while true; do
-    # Kill orphaned Telegram plugin (bun server.ts) from previous crashes.
+    # Kill orphaned plugin bun processes (Telegram + Instagram channel) from previous crashes.
+    # Without this, each crash leaves ~115MB bun process alive; after a few
+    # restarts the VPS OOM-kills Claude before it can fully start.
     pkill -9 -f "bun server.ts" 2>/dev/null || true
+    pkill -9 -f "skills/instagram/channel" 2>/dev/null || true
     sleep 1
 
     # HOME override isolates this agent's Claude state under $AGENT_DIR/.claude/
+    # so access.json, messages.db, settings, and plugin cache are per-agent.
+    # ~/.bun/bin expands using the shell's original HOME (/home/claudebot), not $AGENT_DIR.
     HOME="$AGENT_DIR" python3 "$AGENT_DIR/patches/telegram_plugin.py" 2>/dev/null || true
 
-    # Inline prompt acceptor — handles all startup dialogs automatically
+    # Inline prompt acceptor — background job that watches this session's pane.
+    # Must use explicit -t "$SESSION" — without it, tmux commands from a background
+    # subshell (no attached client) target nothing and return empty.
+    # Runs up to 90 s (30 × 3 s) — fresh installs can take 60+ s to show the dialog.
+    # Searches full pane (no tail/head) — dialog renders at TOP of terminal, not bottom.
+    # Unique text per dialog avoids false matches:
+    #   Trust dialog:  "Yes, I trust this folder" → Enter (select option 1)
+    #   Bypass dialog: "Yes, I accept"            → Down+Enter (select option 2)
     (
       LOGF="$AGENT_DIR/logs/prompt_watcher.log"
       for _i in $(seq 1 30); do
         sleep 3
-        BOT=$(tmux capture-pane -t "$SESSION" -p 2>/dev/null || echo "")
+        BOT=$(tmux capture-pane -t "$SESSION" -p 2>/dev/null || echo "")  # full pane — dialog can be at top or bottom
         if echo "$BOT" | grep -q "trust this folder"; then
           echo "[$(date)] auto-accepted folder trust" >> "$LOGF"
           tmux send-keys -t "$SESSION" Enter; sleep 1
@@ -68,6 +119,9 @@ if [ -n "$TMUX" ]; then
       done
     ) &
 
+    # Use --continue only when a prior session exists in this HOME-isolated dir.
+    # On a fresh install there's nothing to continue — Claude exits with
+    # "No conversation found" and loops forever if --continue is always passed.
     CONTINUE_FLAG=""
     if find "$AGENT_DIR/.claude/projects" -name "*.jsonl" 2>/dev/null | grep -q .; then
       CONTINUE_FLAG="--continue"
@@ -76,7 +130,8 @@ if [ -n "$TMUX" ]; then
     HOME="$AGENT_DIR" ~/.bun/bin/claude \
       --dangerously-skip-permissions \
       $CONTINUE_FLAG \
-      --channels plugin:telegram@claude-plugins-official
+      --channels plugin:telegram@claude-plugins-official \
+      $IG_FLAGS
 
     echo "[$(date)] claude exited — restarting in 5s..."
     sleep 5
