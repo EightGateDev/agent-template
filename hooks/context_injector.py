@@ -151,6 +151,12 @@ def main():
         if mem:
             parts.append("MemPalace context:\n" + mem)
 
+    # ── Lessons — retrieved on every message regardless of chat ──────────────
+    if MEMEPALACE_URL and message_text.strip():
+        lessons = query_mempalace("lessons", message_text[:200])
+        if lessons:
+            parts.append("Relevant lessons from past experience:\n" + lessons)
+
     if parts:
         print(json.dumps({
             "continue": True,
