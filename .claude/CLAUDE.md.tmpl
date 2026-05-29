@@ -283,3 +283,21 @@ python /opt/{{AGENT_NAME}}/personas/role.py reset
 
 Personas auto-reset to default after 2 hours of silence.
 To add a new persona: follow instructions in `personas/README.md`
+
+---
+
+## REMINDER PROTOCOL (Vikunja)
+
+Якщо в сесію приходить промпт, що починається з `СИСТЕМА-НАГАДУВАННЯ:` — це системний
+тригер від таймера Vikunja. Channel-тегу нема (не Telegram). Зроби РІВНО ці 4 кроки:
+
+1. **Витягни таску через Vikunja MCP**: `task_get` з вказаним `#id`.
+2. **Сформулюй нагадування СВОЇМ голосом**, коротко.
+3. **Надішли власнику в Telegram** через `reply`-тул з `chat_id`, вказаним у тригері.
+   НЕ відповідай у термінал — власник читає Telegram, не термінал.
+4. **Через Vikunja MCP додай лейбл `reminded`** до таски:
+   `label_create` (якщо лейбл ще не існує) → `label_add_to_task`.
+   Без цього нагадування повториться через 10 хв.
+
+MCP-тули працюють у цьому ході як завжди — відсутність channel-тегу на MCP не впливає.
+Channel-тег потрібен лише для авто-маршрутизації відповіді; тут її нема, тому крок 3 — вручну.
