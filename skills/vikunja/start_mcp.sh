@@ -1,9 +1,17 @@
 #!/bin/bash
-# Vikunja MCP server launcher — refreshes JWT, then starts @aimbitgmbh/vikunja-mcp
+# Vikunja MCP server launcher — uses long-lived API token (tk_...) if available,
+# falls back to login JWT. Long-lived token never expires; JWT lasts ~10 min.
 AGENT_DIR="$(cd "$(dirname "$0")/../.." && pwd)"
 set -a; source "$AGENT_DIR/.env"; set +a
 
-JWT=$(python3 -c "
+export VIKUNJA_API_URL="${VIKUNJA_URL%/}/api/v1"
+
+if [ -n "$VIKUNJA_API_TOKEN" ]; then
+    # Long-lived token already stored — use it directly (no login needed)
+    export VIKUNJA_API_TOKEN
+else
+    # Fallback: get fresh login JWT (expires ~10 min, sufficient for setup)
+    VIKUNJA_API_TOKEN=$(python3 -c "
 import urllib.request, json, os, sys
 url = os.environ.get('VIKUNJA_URL','').rstrip('/')
 u = os.environ.get('VIKUNJA_USERNAME','')
@@ -19,7 +27,7 @@ try:
 except:
     print(os.environ.get('VIKUNJA_TOKEN',''), end='')
 " 2>/dev/null)
+    export VIKUNJA_API_TOKEN
+fi
 
-export VIKUNJA_API_URL="${VIKUNJA_URL}/api/v1"
-export VIKUNJA_API_TOKEN="$JWT"
 exec npx -y @aimbitgmbh/vikunja-mcp "$@"

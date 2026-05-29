@@ -31,6 +31,43 @@ def _api(path: str, body=None, token: str = "", method: str | None = None) -> di
         return None
 
 
+def _create_api_token(slug: str, login_token: str) -> str:
+    """Create a long-lived Vikunja API token (tk_...) for use by the MCP server.
+    Login JWTs expire in ~10 min — API tokens can be set far in the future.
+    Returns the token string or empty string on failure."""
+    # Discover permission groups dynamically from GET /routes
+    routes = _api("/routes", token=login_token)
+    permissions: dict = {}
+    if isinstance(routes, list):
+        for r in routes:
+            group = r if isinstance(r, str) else (r.get("name") or r.get("group") or "")
+            group = str(group).split("/")[0].strip().lower()
+            if group and group not in permissions:
+                permissions[group] = {
+                    "read": True, "readAll": True,
+                    "create": True, "update": True, "delete": True,
+                }
+    if not permissions:
+        # Hardcoded fallback for v2.3.0 known groups
+        for g in ("tasks", "projects", "labels", "users", "teams",
+                  "filters", "subscriptions", "notifications", "buckets"):
+            permissions[g] = {"read": True, "readAll": True,
+                               "create": True, "update": True, "delete": True}
+
+    result = _api("/tokens", {
+        "title": f"{slug}-mcp",
+        "permissions": permissions,
+        "expires_at": "2125-01-01T00:00:00Z",
+    }, token=login_token, method="PUT")
+
+    if result and "token" in result:
+        t = result["token"]
+        print(f"[vikunja-setup] API token created (long-lived)")
+        return t
+    print(f"[vikunja-setup] API token creation failed: {result} — MCP will use login JWT (expires ~10 min)", file=sys.stderr)
+    return ""
+
+
 def load_env() -> dict:
     env: dict = {}
     f = AGENT_DIR / ".env"
@@ -102,14 +139,18 @@ def main() -> None:
         )
     project_id = str(proj["id"]) if proj and "id" in proj else ""
 
+    # Create long-lived API token (tk_...) so MCP doesn't expire in ~10 min
+    api_token = _create_api_token(slug, token)
+
     append_env(
         VIKUNJA_URL="http://localhost:3456",
         VIKUNJA_USERNAME=username,
         VIKUNJA_PASSWORD=password,
         VIKUNJA_TOKEN=token,
         VIKUNJA_PROJECT_ID=project_id,
+        VIKUNJA_API_TOKEN=api_token,
     )
-    print(f"[vikunja-setup] configured: user={username} project_id={project_id}")
+    print(f"[vikunja-setup] configured: user={username} project_id={project_id} api_token={'ok' if api_token else 'FAILED-fallback-to-jwt'}")
 
 
 if __name__ == "__main__":
