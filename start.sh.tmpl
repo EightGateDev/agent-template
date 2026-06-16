@@ -80,6 +80,18 @@ if [ -n "$TMUX" ]; then
     pkill -9 -f "skills/instagram/channel" 2>/dev/null || true
     sleep 1
 
+    # ── Telegram plugin preflight (race-proof) ────────────────────────────────
+    # Claude caches installed-plugin state ONCE at startup. If the plugin isn't registered
+    # yet when this session launches, the --channels Telegram bridge never loads and the bot
+    # stays silent until a restart. ENSURE it via Claude's own CLI here — idempotent and
+    # version-agnostic — BEFORE the patch + launch. A fast no-op once already registered.
+    _CB="$HOME/.bun/bin/claude"
+    if ! HOME="$AGENT_DIR" "$_CB" plugin list 2>/dev/null | grep -q "telegram@claude-plugins-official"; then
+      echo "[$(date)] [plugin-preflight] telegram plugin not registered — installing via CLI" >> "$AGENT_DIR/logs/prompt_watcher.log"
+      HOME="$AGENT_DIR" "$_CB" plugin marketplace add anthropics/claude-plugins-official >> "$AGENT_DIR/logs/prompt_watcher.log" 2>&1 || true
+      HOME="$AGENT_DIR" "$_CB" plugin install telegram@claude-plugins-official    >> "$AGENT_DIR/logs/prompt_watcher.log" 2>&1 || true
+    fi
+
     # HOME override isolates this agent's Claude state under $AGENT_DIR/.claude/
     # so access.json, messages.db, settings, and plugin cache are per-agent.
     # ~/.bun/bin expands using the shell's original HOME (/home/claudebot), not $AGENT_DIR.
@@ -122,6 +134,22 @@ if [ -n "$TMUX" ]; then
           tmux send-keys -t "$SESSION" "1" Enter; sleep 2
         fi
         if echo "$BOT" | grep -q "bypass permissions on"; then break; fi
+      done
+    ) &
+
+    # Plugin guard — if Claude boots but the Telegram plugin never spawns (flaky first-boot
+    # MCP connect: claude alive but bot silent), kill Claude so the loop relaunches with a
+    # fresh channel. pkill is user-scoped → only this agent's Claude. Grace period first.
+    (
+      sleep 120
+      for _g in $(seq 1 20); do
+        tmux has-session -t "$SESSION" 2>/dev/null || break
+        if ! pgrep -f "$AGENT_DIR/.claude/plugins/cache/claude-plugins-official/telegram" >/dev/null 2>&1; then
+          echo "[$(date)] [plugin-guard] Telegram plugin not running — restarting Claude" >> "$AGENT_DIR/logs/prompt_watcher.log"
+          pkill -f "dangerously-skip-permissions" 2>/dev/null
+          break
+        fi
+        sleep 30
       done
     ) &
 
