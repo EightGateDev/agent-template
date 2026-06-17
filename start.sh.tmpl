@@ -137,21 +137,9 @@ if [ -n "$TMUX" ]; then
       done
     ) &
 
-    # Plugin guard — if Claude boots but the Telegram plugin never spawns (flaky first-boot
-    # MCP connect: claude alive but bot silent), kill Claude so the loop relaunches with a
-    # fresh channel. pkill is user-scoped → only this agent's Claude. Grace period first.
-    (
-      sleep 120
-      for _g in $(seq 1 20); do
-        tmux has-session -t "$SESSION" 2>/dev/null || break
-        if ! pgrep -f "$AGENT_DIR/.claude/plugins/cache/claude-plugins-official/telegram" >/dev/null 2>&1; then
-          echo "[$(date)] [plugin-guard] Telegram plugin not running — restarting Claude" >> "$AGENT_DIR/logs/prompt_watcher.log"
-          pkill -f "dangerously-skip-permissions" 2>/dev/null
-          break
-        fi
-        sleep 30
-      done
-    ) &
+    # (Plugin guard removed 2026-06-17 — incompatible with --channels: the Telegram bridge runs
+    # IN-PROCESS inside Claude (no separate process to pgrep), so the guard killed a healthy Claude
+    # every ~60s. With --channels, Claude-alive ⇒ channel-alive; the session watchdog covers crashes.)
 
     # Use --continue only when a prior session exists in this HOME-isolated dir.
     # On a fresh install there's nothing to continue — Claude exits with
