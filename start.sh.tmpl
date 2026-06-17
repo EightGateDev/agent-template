@@ -91,6 +91,9 @@ if [ -n "$TMUX" ]; then
       HOME="$AGENT_DIR" "$_CB" plugin marketplace add anthropics/claude-plugins-official >> "$AGENT_DIR/logs/prompt_watcher.log" 2>&1 || true
       HOME="$AGENT_DIR" "$_CB" plugin install telegram@claude-plugins-official    >> "$AGENT_DIR/logs/prompt_watcher.log" 2>&1 || true
     fi
+    # The plugin installs DISABLED by default — ENABLE it, else --channels never starts the
+    # telegram poller (bun server.ts) and the bot stays silent. Idempotent.
+    HOME="$AGENT_DIR" "$_CB" plugin enable telegram@claude-plugins-official >/dev/null 2>&1 || true
 
     # HOME override isolates this agent's Claude state under $AGENT_DIR/.claude/
     # so access.json, messages.db, settings, and plugin cache are per-agent.
