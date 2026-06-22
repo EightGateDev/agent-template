@@ -32,14 +32,20 @@ where everything is already wired.
 ### List events
 
 ```bash
-# Events on a specific day (use the user's timezone)
-gog calendar events primary --from 2026-04-17T00:00:00+04:00 --to 2026-04-17T23:59:59+04:00
+# Events on a specific day — the offset MUST match the owner's timezone
+# ($AGENT_TIMEZONE; e.g. +03:00 for Europe/Kyiv in summer). Do not use +04:00 blindly.
+gog calendar events primary --from 2026-04-17T00:00:00+03:00 --to 2026-04-17T23:59:59+03:00
 
-# Upcoming events this week
+# Upcoming events this week (a UTC range is fine for a multi-day window)
 gog calendar events primary --from 2026-04-13T00:00:00Z --to 2026-04-20T00:00:00Z
 ```
 
-`primary` is the default calendar. `gog calendar list` lists calendars.
+`primary` is the default calendar — **read ONLY `primary`** unless the user
+explicitly names another. Do NOT iterate `gog calendar list` and merge other
+calendars into the answer: shared / subscribed / holiday calendars contain events
+the user did NOT create (e.g. someone else's "training"), and surfacing them as
+"your events" is a bug. If you ever do read a non-primary calendar, label the
+source explicitly. `gog calendar list` is only for picking a calendar on request.
 
 ### Create an event
 
@@ -71,10 +77,15 @@ Event color IDs:
 ISO 8601: `2026-04-15T14:00:00+03:00` or `...Z`. Date-only (all-day):
 `2026-04-15`.
 
-Get current time in the user's timezone (cross-platform, no pytz):
+Get the current local time. The agent process runs with `TZ=$AGENT_TIMEZONE`
+(set in `.env`), so the system clock is already in the owner's timezone — no
+manual offset math, and no hard-coded `hours=4`:
 
 ```bash
-python3 -c "from datetime import datetime, timezone, timedelta; print(datetime.now(timezone(timedelta(hours=4))).isoformat())"
+# TZ-aware "now" — offset matches the owner's timezone automatically:
+python3 -c "from datetime import datetime; print(datetime.now().astimezone().isoformat())"
+# or simply:
+date --iso-8601=seconds
 ```
 
 ## Best practices
@@ -89,7 +100,27 @@ python3 -c "from datetime import datetime, timezone, timedelta; print(datetime.n
   with a real query, don't trust the conversation log.
 - Update/delete triggers an automatic confirmation card — call
   `bash_exec` normally, the system shows a preview with Confirm/Cancel.
-- Creating events does NOT need confirmation.
-- Use `primary` by default unless user specifies another calendar.
-- Timezone: read from owner MEMORY or derive from the Current date block
-  in the system prompt.
+- Creating an event does NOT pop a confirmation card, but you MUST state the
+  resolved weekday + date you used in your reply, so the user can catch a slip.
+- Use `primary` by default — read ONLY primary (see "List events" above).
+- Timezone: the process runs with `TZ=$AGENT_TIMEZONE`, so local time is already
+  correct. Cross-check the owner's MEMORY timezone if unsure. Never assume UTC.
+
+## Date & weekday discipline (READ BEFORE CREATING) — critical
+
+A real bug happened here: the user said "Saturday the 20th"; the agent wrote the
+events on Sunday the 21st. Prevent it:
+
+1. **Resolve the absolute date yourself, every time.** Never trust a weekday→date
+   mapping from memory or guesswork — compute it in the owner's timezone:
+   ```bash
+   date --iso-8601=seconds                       # today, local TZ
+   python3 -c "import datetime; d=datetime.date(2026,6,20); print(d.isoformat(), d.strftime('%A'))"
+   ```
+2. **If the user names BOTH a weekday and a day-number** ("субота 20-е"), verify
+   they agree. If the 20th is actually a Friday, STOP and ask — do not silently
+   pick one.
+3. **Echo it back.** Your reply must name the weekday AND the date you wrote
+   ("Записав на суботу, 20 червня"), so any mistake is visible immediately.
+4. Build `--from`/`--to` with the explicit local offset (e.g. `+03:00` for Kyiv),
+   never a bare time the box might read as UTC.

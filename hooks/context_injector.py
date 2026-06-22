@@ -119,6 +119,32 @@ def query_mempalace(chat_id: str, query: str = "") -> str:
         return ""
 
 
+def current_moment_block() -> str:
+    """Fresh local 'now', injected EVERY turn so the model never guesses the date/weekday and
+    never reuses a stale 'today' from a long-running --continue session (the server is in UTC;
+    the owner is not). The owner's zone is the process TZ (TZ=$AGENT_TIMEZONE); if zoneinfo
+    can't resolve it we still print the IANA name and fall back to the process-local clock."""
+    tz_name = os.environ.get("AGENT_TIMEZONE") or os.environ.get("TZ") or ""
+    now = None
+    if tz_name:
+        try:
+            from zoneinfo import ZoneInfo
+            now = datetime.now(ZoneInfo(tz_name))
+        except Exception:
+            now = None
+    if now is None:
+        now = datetime.now().astimezone()
+        tz_name = tz_name or str(now.tzinfo)
+    off = now.strftime("%z")
+    off = (off[:3] + ":" + off[3:]) if len(off) == 5 else (off or "+00:00")
+    return (
+        "CURRENT MOMENT (owner's timezone — AUTHORITATIVE; use THIS for today / tomorrow / "
+        "this-week / weekday math. NEVER guess the weekday and NEVER reuse an older 'today' "
+        "from earlier in this session):\n"
+        f"{now.strftime('%A, %Y-%m-%d %H:%M')} {tz_name} (UTC{off})"
+    )
+
+
 def main():
     try:
         raw  = sys.stdin.read()
@@ -129,6 +155,10 @@ def main():
         return
 
     parts: list[str] = []
+
+    # Fresh local "now" first, on EVERY turn — kills stale-session date drift (server is UTC,
+    # owner is not) and weekday guessing. Applies to all agent types (shared hook).
+    parts.append(current_moment_block())
 
     # ── Level 2: detect source and inject routing instruction ─────────────────
     tg = extract_telegram_source(message_text)
