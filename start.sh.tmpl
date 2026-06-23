@@ -95,6 +95,13 @@ if [ -n "$TMUX" ]; then
     # telegram poller (bun server.ts) and the bot stays silent. Idempotent.
     HOME="$AGENT_DIR" "$_CB" plugin enable telegram@claude-plugins-official >/dev/null 2>&1 || true
 
+    if [ "${INSTAGRAM_ENABLED:-false}" = "true" ] && ! HOME="$AGENT_DIR" "$_CB" plugin list 2>/dev/null | grep -q "instagram-dm@local"; then
+      echo "[$(date)] [plugin-preflight] installing instagram-dm@local channel" >> "$AGENT_DIR/logs/prompt_watcher.log"
+      HOME="$AGENT_DIR" "$_CB" plugin marketplace add "$AGENT_DIR"        >> "$AGENT_DIR/logs/prompt_watcher.log" 2>&1 || true
+      HOME="$AGENT_DIR" "$_CB" plugin install instagram-dm@local          >> "$AGENT_DIR/logs/prompt_watcher.log" 2>&1 || true
+    fi
+    [ "${INSTAGRAM_ENABLED:-false}" = "true" ] && HOME="$AGENT_DIR" "$_CB" plugin enable instagram-dm@local >/dev/null 2>&1 || true
+
     # HOME override isolates this agent's Claude state under $AGENT_DIR/.claude/
     # so access.json, messages.db, settings, and plugin cache are per-agent.
     # ~/.bun/bin expands using the shell's original HOME (/home/claudebot), not $AGENT_DIR.
