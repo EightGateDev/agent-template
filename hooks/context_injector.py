@@ -149,7 +149,7 @@ def main():
     try:
         raw  = sys.stdin.read()
         data = json.loads(raw) if raw.strip() else {}
-        message_text = data.get("message", "")
+        message_text = data.get("prompt") or data.get("message") or data.get("text") or ""
     except Exception:
         print(json.dumps({"continue": True}))
         return
