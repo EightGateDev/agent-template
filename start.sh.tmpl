@@ -136,6 +136,16 @@ if [ -n "$TMUX" ]; then
           echo "[$(date)] auto-reconnecting failed MCP plugin" >> "$LOGF"
           tmux send-keys -t "$SESSION" "1" Enter; sleep 2
         fi
+        # "2 new MCP servers found ... Select any you wish to enable" (servers pre-checked) -> Enter confirms.
+        if echo "$BOT" | grep -qE "Select any you wish to enable|new MCP server"; then
+          echo "[$(date)] auto-enabling new MCP servers (Enter)" >> "$LOGF"
+          tmux send-keys -t "$SESSION" Enter; sleep 1
+        fi
+        # "Loading development channels ... using this for local development" (option 1 pre-selected) -> Enter.
+        if echo "$BOT" | grep -qE "Loading development channels|using this for local development"; then
+          echo "[$(date)] auto-accepting development channels (Enter)" >> "$LOGF"
+          tmux send-keys -t "$SESSION" Enter; sleep 1
+        fi
         if echo "$BOT" | grep -q "bypass permissions on"; then break; fi
       done
     ) &
